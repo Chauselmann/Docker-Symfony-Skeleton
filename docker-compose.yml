@@ -1,0 +1,91 @@
+version: '3'
+services:
+  php:
+    build: .
+    image: php:7.4-apache
+    container_name: php
+    depends_on:
+      - mysql
+    working_dir: /var/www/html/symfony_project
+    volumes:
+      - ./php/vhosts:/etc/apache2/sites-enabled
+      - .:/var/www/html/symfony_project
+    labels:
+      - "traefik.http.routers.app1.rule=Host(`app1.traefik.me`)"
+      - "traefik.http.routers.app1-tls.tls.domains[0].main=app1.traefik.me"
+      - "traefik.http.routers.app1-tls.tls.domains[0].sans=app1-*.traefik.me"
+      - "traefik.http.routers.app1.tls=true"
+    networks:
+      - dev
+
+  mysql:
+    image: mysql:5.7
+    container_name: mysql
+    command:
+      - "--default-authentication-plugin=mysql_native_password"
+      - "--lower_case_table_names=1"
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpass0
+      # Variables d'environnement pour se connecter à la base de données
+      - MYSQL_DATABASE=symfony
+      - MYSQL_USER=symfony
+      - MYSQL_PASSWORD=symfony
+    ports:
+      - "3306:3306"
+    networks:
+      - dev
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:5.0.1
+    container_name: phpmyadmin
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      PMA_ARBITRARY: 1
+    links:
+      - mysql
+    ports:
+      - "8081:80"
+    networks:
+      - dev
+
+  mailhog:
+    image: mailhog/mailhog
+    container_name: mailhog
+    ports:
+      - 1025:1025 # smtp server
+      - 8025:8025 # web ui
+
+  traefik:
+    restart: unless-stopped
+    container_name: traefik
+    image: traefik:v2.0.2
+    ports:
+      - "80:80"
+      - "443:443"
+    labels:
+      - "traefik.http.services.traefik.loadbalancer.server.port=8080"
+    volumes:
+      - ./traefik.yml:/etc/traefik/traefik.yml
+      - ./tls.yml:/etc/traefik/tls.yml
+      - /var/run/docker.sock:/var/run/docker.sock
+      - certs:/etc/ssl/traefik
+    networks:
+      - dev
+
+  reverse-proxy-https-helper:
+    image: alpine
+    container_name: temporary_reverse_proxy
+    command: sh -c "cd /etc/ssl/traefik
+      && wget traefik.me/cert.pem -O cert.pem
+      && wget traefik.me/privkey.pem -O privkey.pem"
+    volumes:
+      - certs:/etc/ssl/traefik
+    networks:
+      - dev
+
+networks:
+  dev:
+
+volumes:
+  certs:
